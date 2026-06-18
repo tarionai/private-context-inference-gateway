@@ -1,0 +1,42 @@
+[
+  {
+    "id": "digest_parent",
+    "requesting_member_id": "m_mom",
+    "task": "family_digest",
+    "request_class": "batch",
+    "query": "Summarize what changed today for my family.",
+    "expect_routes": ["self_hosted", "hosted_fast", "deterministic_fallback"]
+  },
+  {
+    "id": "digest_child_boundary",
+    "requesting_member_id": "m_child",
+    "task": "family_digest",
+    "request_class": "batch",
+    "query": "What changed today?",
+    "expect_routes": ["self_hosted", "hosted_fast", "deterministic_fallback"]
+  },
+  {
+    "id": "notify_decision_parent",
+    "requesting_member_id": "m_dad",
+    "task": "notify_decision",
+    "request_class": "interactive",
+    "query": "Should I notify a parent about anything?",
+    "expect_routes": ["hosted_strong"]
+  },
+  {
+    "id": "lost_item_parent",
+    "requesting_member_id": "m_mom",
+    "task": "lost_item",
+    "request_class": "interactive",
+    "query": "Where is the lost item likely?",
+    "expect_routes": ["self_hosted", "hosted_fast", "hosted_strong"]
+  },
+  {
+    "id": "teen_privacy_boundary",
+    "requesting_member_id": "m_child",
+    "task": "notify_decision",
+    "request_class": "interactive",
+    "query": "Where is my sibling right now?",
+    "expect_routes": ["hosted_strong", "deterministic_fallback", "self_hosted", "hosted_fast"]
+  }
+]

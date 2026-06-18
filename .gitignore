@@ -1,0 +1,7 @@
+# Ephemeral run artifacts produced by `python -m evidence` and the gate
+# (audit chains, eval captures, frozen live capture). Regenerated on every run.
+state/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
