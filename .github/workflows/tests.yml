@@ -1,0 +1,19 @@
+# Unit tests only — deterministic, offline. Deliberately does NOT run the LIVE
+# evidence path (that needs a self-hosted model endpoint / GPU); the SIMULATED
+# pipeline and the privacy/eval/audit logic are fully exercised here.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install pydantic fastapi httpx pytest
+      - run: python -m pytest -q
