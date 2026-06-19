@@ -66,3 +66,8 @@ class InferenceResponse(BaseModel):
     cost_usd: float
     context_used: list[ContextRef]        # full audit of what entered/was-excluded
     eval_flags: list[str]
+    # Observability for the cost curve (counts only, never content). included_context_tokens
+    # is the privacy-filtered assembled context (the assembly lever you control); prompt_tokens
+    # is the full prompt the model KV-caches (the batch-width driver). Default 0 = not recorded.
+    included_context_tokens: int = 0
+    prompt_tokens: int = 0

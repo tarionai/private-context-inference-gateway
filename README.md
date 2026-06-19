@@ -8,6 +8,8 @@ A live, hash-verifiable inference gateway that pairs a deterministic multi-princ
 
 > **Hard rule:** synthetic data only. No real PII, no real credentials. The synthetic multi-principal graph *is* the proprietary-shaped data ("data as the moat").
 
+**Write-up:** [Owning the Seam Between Private Data and the Model](https://www.tarion.ai/blog/private-context-inference-gateway) — the architecture, the assembly-time privacy boundary, and the honest measured-vs-modeled cost story, on tarion.ai.
+
 ## What it demonstrates (minimum verifiable set — confirmable in <10 min)
 
 | Capability | How it's shown |
@@ -50,9 +52,17 @@ A real 14.8B Q4 model served the request (`route=self_hosted`, real cold/warm la
 | Metric | Modal L4 + Qwen2.5-7B (exact $0.7992/hr) | Local Ollama (CPU, reasoning model) |
 |---|---|---|
 | Warm latency | **0.93 s (interactive-grade)** | ~27 s (batch-grade) |
-| Cold (scale-from-zero: spin + load 7B from cache volume) | ~96 s | ~40 s |
+| Cold (scale-from-zero: spin + load 7B from cache volume) | **~85 s (measured 77–92 s)** | ~40 s |
 | Active serving cost | $0.000206/req | — |
-| Amortized boot/idle (real ~95 s boot + 300 s idle, sparse traffic) | $0.029/req → **~$118k / 1M families/day** | $0.029/req |
+| Amortized boot/idle (measured ~85 s boot + 300 s idle, sparse traffic) | ~$0.028/req → **~$113k / 1M families/day** *(sparse isolated upper bound — no pooling)* | ~$0.028/req |
+| **Pooled fleet** (1M families, peak-concurrency, warm basis ~0.93 s) | A **measured cost curve by context size** (sustainable batch falls as context grows), at 4 req/family/day: **~$52–173/day** at tiny ~184-tok context (batch 16) → **~$207–634/day** at realistic ~0.5–1k-tok context (batch 4) → **~$827–2,496/day** at full 4096-tok context (batch 1). Cost scales ~linearly with density. MODELED projection over **MEASURED** batch + cold-boot inputs. | — |
+
+> **Regime distinction — read before quoting the cost.** The **~$113k/day** figure is the *sparse isolated upper bound*: it assumes every family boots its own GPU, serves a few requests, then scales to zero — i.e. **zero pooling across families**. ADR-0001 permits multi-family co-tenancy on a warm GPU (shared base model, per-request private context, **salted** KV/prefix cache, sequence-level isolation), so the real fleet pools families onto warm replicas sized at the **diurnal peak** (Little's law) with an always-warm baseline floor — a band **2–3 orders of magnitude lower**. The two load-bearing inputs are now **MEASURED on Modal L4** ([`serving/loadtest.py`](./serving/loadtest.py); frozen capture `state/loadtest_sweep_capture.json`, 4 runs):
+>
+> - **Sustainable batch width is a measured CURVE that falls with context length.** A context-size sweep (`serving/loadtest.py ctxcurve`) measured **16 at tiny (~184-tok) context → 4 at realistic (~0.5–1k tok) → 2 (~2k) → 1 at full 4096 context**, all at a p95 < 3 s interactive SLO. The earlier "~16–21 at full context" KV estimate is **refuted**: the binding limit at large context is **prefill compute + queueing, not KV exhaustion** (vLLM logs showed KV peaking at ~57% with 12 requests queued). The "16" holds only at the smallest context, right at the SLO knee. `--max-num-seqs 32` is a *configured ceiling*, never interactively sustainable at any tested context.
+> - **Cold boot measured ~77–92 s** — vs the model's previously assumed 30 s. Corrected in `telemetry/cost.py`.
+>
+> So the pooled cost is now a **MODELED-arithmetic-over-MEASURED-inputs curve**: at warm ~0.93 s, 4 req/family/day, it runs **~$52/day (tiny ~184-tok ctx, batch 16) → ~$207–634/day (realistic ~0.5–1k tok, batch 4) → ~$827–2,496/day (full 4096 ctx, batch 1)**; cost scales ~linearly with request density. The one remaining gap is **context-distribution realism**: the demo fixture assembles only ~15–77 tok (cheapest end), so the real operating point needs a production assembled-context p50–p99. `python -m evidence` (LIVE) prints the curve per run (timings vary); SIMULATED mode uses a faster simulated warm latency, so its band sits lower. Math and decisions: [`docs/IMPL_COST_MODEL_V2_fleet_economics.md`](./docs/IMPL_COST_MODEL_V2_fleet_economics.md); measurement method: [`serving/vllm_config.md`](./serving/vllm_config.md).
 
 ```
 pip install modal && python -m modal setup            # one-time browser auth

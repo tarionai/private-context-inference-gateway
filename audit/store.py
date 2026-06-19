@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,6 +39,10 @@ class AuditStore:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # The hash chain is a read-modify-write (last hash -> append). Serialize it so
+        # concurrent gateway requests (threaded serving) cannot chain off a stale prev
+        # hash or interleave writes — a load test corrupted the chain without this.
+        self._append_lock = threading.Lock()
 
     def _last_hash(self) -> str:
         if not self.path.exists():
@@ -64,11 +69,12 @@ class AuditStore:
             "recorded_at": datetime.now(timezone.utc).isoformat(),
         }
         body = _canonical(body_payload)
-        prev_hash = self._last_hash()
-        record_hash = _hash(prev_hash, body)
-        record = {**body_payload, "prev_hash": prev_hash, "record_hash": record_hash}
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(_canonical(record) + "\n")
+        with self._append_lock:
+            prev_hash = self._last_hash()
+            record_hash = _hash(prev_hash, body)
+            record = {**body_payload, "prev_hash": prev_hash, "record_hash": record_hash}
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(_canonical(record) + "\n")
         return record_hash
 
     def verify_chain(self) -> tuple[bool, int]:

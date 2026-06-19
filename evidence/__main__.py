@@ -29,7 +29,15 @@ from eval.gate import run_gate
 from gateway.composition import build_gateway
 from gateway.contract import InferenceRequest, RequestClass, Route, TaskKind
 from serving.clients import self_hosted_from_env
-from telemetry.cost import SelfHostedCostConfig, cost_for, project_fleet_cost
+from telemetry.cost import (
+    MEASURED_BATCH_BY_CONTEXT,
+    FleetScenario,
+    PooledDiurnalFleetCostModel,
+    SelfHostedCostConfig,
+    SparseIsolatedCostModel,
+    cost_for,
+    scenario_table,
+)
 
 ANCHOR = datetime(2026, 6, 18, 17, 0, tzinfo=timezone.utc)
 POLICY_VERSION = "policy-2026-06-18"
@@ -40,6 +48,19 @@ _LABEL = "LIVE" if _LIVE else "SIMULATED"
 _SELF_HOSTED_MODEL = os.environ.get("SELF_HOSTED_MODEL", "family-7b")
 _HOST_USD_PER_HOUR = float(os.environ.get("SELF_HOSTED_USD_PER_HOUR", "0.80"))
 _OLLAMA_KEEPALIVE_SEC = 300.0  # Ollama default keep-alive == the real scale-to-zero idle window
+
+# Pooled-fleet COST CURVE by context size. The projection is MODELED arithmetic, but
+# the sustainable batch width per context is MEASURED on Modal L4 (loadtest.py ctxcurve,
+# state/loadtest_ctxcurve_capture.json). Batch FALLS with context length: 16 at tiny
+# (~184 tok) -> 4 at realistic (~0.5-1k tok) -> 2 (~2k) -> 1 at full 4096 ctx (prefill-
+# compute-bound). Rendered at a fixed density; cost scales ~linearly with density.
+_FLEET_FAMILIES = 1_000_000
+_FLEET_DIURNAL_PEAK = 3.0   # peak instantaneous rate / daily-average rate (assumed)
+_FLEET_DENSITY = 4          # req/family/day for the context curve (cost scales ~linearly)
+_FLEET_MATRIX = tuple(
+    (f"ctx ~{tokens:>4} tok [MEASURED batch {batch}]", _FLEET_DENSITY, batch)
+    for tokens, batch in MEASURED_BATCH_BY_CONTEXT
+)
 
 
 def _unload_self_hosted() -> None:
@@ -111,6 +132,40 @@ def _live_cost_config(cold, warm) -> SelfHostedCostConfig:
     )
 
 
+def _fleet_scenarios(warm_service_sec: float) -> list[FleetScenario]:
+    return [
+        FleetScenario(
+            f"{label} ({density} req/fam/day, batch {batch})",
+            PooledDiurnalFleetCostModel(
+                families=_FLEET_FAMILIES,
+                requests_per_family_per_day=density,
+                diurnal_peak_factor=_FLEET_DIURNAL_PEAK,
+                warm_service_sec=warm_service_sec,
+                max_concurrent_per_replica=batch,
+                cotenancy_permitted=True,  # ADR-0001: shared base model, salted KV/prefix cache
+            ),
+        )
+        for label, density, batch in _FLEET_MATRIX
+    ]
+
+
+def _print_fleet_regimes(headline_usd: float, warm_service_sec: float) -> dict:
+    """Sparse no-pooling UPPER BOUND next to the pooled fleet band, from the model."""
+    sparse = SparseIsolatedCostModel(headline_usd, _FLEET_MATRIX[0][1], _FLEET_FAMILIES)
+    rows = scenario_table(_fleet_scenarios(warm_service_sec), sparse)
+    print(f"  sparse isolated UPPER BOUND (no pooling)  : "
+          f"${rows[0]['sparse_fleet_usd_day']:,.2f}/day")
+    print(f"  pooled fleet COST CURVE by context size [MODELED projection; batch MEASURED] - "
+          f"co-tenancy per ADR-0001, diurnal x{_FLEET_DIURNAL_PEAK:.0f}, warm={warm_service_sec:.2f}s, "
+          f"{_FLEET_DENSITY} req/fam/day; sustainable batch falls 16(tiny)->4(realistic)->1(full-ctx):")
+    for row in rows:
+        print(f"    {row['label']:46s} ${row['pooled_usd_day_low']:,.0f}-{row['pooled_usd_day_high']:,.0f}/day"
+              f"  | GPU-hrs {row['warm_container_hours_low']:.0f}-{row['warm_container_hours_high']:.0f}"
+              f"  | ramp cold-start {row['rampup_cold_start_fraction']:.2%}"
+              f"  | E[lat] {row['expected_latency_ms']:,.0f}ms")
+    return sparse.project()
+
+
 def _section_4_cost(cold, warm) -> dict:
     _rule("4. Per-route cost - active serving AND amortized boot/idle")
     config = _live_cost_config(cold, warm) if _LIVE else None
@@ -121,9 +176,8 @@ def _section_4_cost(cold, warm) -> dict:
     print(f"  self-hosted active serving      : ${breakdown.active_serving_usd:.6f}/request")
     print(f"  self-hosted amortized boot/idle : ${breakdown.amortized_boot_idle_usd:.6f}/request")
     print(f"    ({basis})")
-    fleet = project_fleet_cost(breakdown.headline_usd, requests_per_family_per_day=4, families=1_000_000)
-    print(f"  cost/family/day                 : ${fleet['cost_per_family_day_usd']:.4f}")
-    print(f"  projected 1M families/day       : ${fleet['projected_fleet_day_usd']:,.2f}")
+    warm_service_sec = max(warm.latency_ms / 1000.0, 0.001)
+    fleet = _print_fleet_regimes(breakdown.headline_usd, warm_service_sec)
     return {"breakdown": breakdown, "fleet": fleet}
 
 

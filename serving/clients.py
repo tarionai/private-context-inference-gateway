@@ -52,7 +52,7 @@ class LLMClient(Protocol):
     def complete(self, system: str, prompt: str) -> CompletionResult: ...
 
 
-def _approx_tokens(text: str) -> int:
+def approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
@@ -77,8 +77,8 @@ class DeterministicClient:
         return CompletionResult(
             text=body,
             model_used=self.name,
-            prompt_tokens=_approx_tokens(prompt),
-            completion_tokens=_approx_tokens(body),
+            prompt_tokens=approx_tokens(prompt),
+            completion_tokens=approx_tokens(body),
             latency_ms=1.0,
             cold_start=False,
             simulated=True,
@@ -178,7 +178,7 @@ class SelfHostedOpenAIClient:
         return CompletionResult(
             text=_strip_reasoning(raw) or "(reasoning-model output; answer budget exhausted)",
             model_used=self.name,
-            prompt_tokens=getattr(usage, "prompt_tokens", _approx_tokens(prompt)),
+            prompt_tokens=getattr(usage, "prompt_tokens", approx_tokens(prompt)),
             completion_tokens=getattr(usage, "completion_tokens", 0),
             latency_ms=latency_ms,
             cold_start=cold,

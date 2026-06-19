@@ -20,7 +20,7 @@ from gateway.contract import (
     Route,
 )
 from gateway.router import Router, decide_route
-from serving.clients import CompletionResult
+from serving.clients import CompletionResult, approx_tokens
 from telemetry.cost import cost_for
 
 Assembler = Callable[..., AssembledContext]
@@ -87,6 +87,8 @@ class Gateway:
             cost_usd=breakdown.total_usd,
             context_used=ctx.refs,
             eval_flags=["simulated_model"] if result.simulated else [],
+            included_context_tokens=approx_tokens(ctx.prompt_text) if ctx.prompt_text else 0,
+            prompt_tokens=result.prompt_tokens,
         )
         self._audit_append(req, response, now_utc)
         return InferenceOutcome(response=response, context=ctx, cost_route=final_route)
