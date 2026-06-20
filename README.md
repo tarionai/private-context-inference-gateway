@@ -6,7 +6,7 @@
 
 [![tests](https://github.com/tarionai/private-context-inference-gateway/actions/workflows/tests.yml/badge.svg)](https://github.com/tarionai/private-context-inference-gateway/actions/workflows/tests.yml)
 
-**I own the seam between deterministic context data and probabilistic LLM behavior — and I make that seam safe, measurable, cost-aware, and shippable.**
+**Own the seam between deterministic context data and probabilistic LLM behavior — and make that seam safe, measurable, cost-aware, and shippable.**
 
 A live, hash-verifiable inference gateway that pairs a deterministic multi-principal context store with self-hosted and hosted LLMs. Built to demonstrate end-to-end ownership of an LLM inference pipeline: model routing, self-hosted serving, privacy-filtered context assembly, eval-gated release, and cost telemetry — over synthetic multi-user (family-shaped) data.
 
