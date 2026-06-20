@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/social-card.png" alt="Private Context Inference Gateway — own the seam between private data and the model" width="100%">
+</p>
+
 # Private Context Inference Gateway
 
 [![tests](https://github.com/tarionai/private-context-inference-gateway/actions/workflows/tests.yml/badge.svg)](https://github.com/tarionai/private-context-inference-gateway/actions/workflows/tests.yml)
