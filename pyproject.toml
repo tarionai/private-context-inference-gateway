@@ -9,6 +9,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Run the gateway as an HTTP service against a live self-hosted (Ollama / vLLM)
+# endpoint. uvicorn serves gateway.app:app; openai backs the OpenAI-compatible
+# self_hosted route (serving/clients.py). Both are already imported by the code.
+runtime = [
+    "uvicorn>=0.29",
+    "openai>=1.0",
+]
 serve = [
     "modal>=0.64",
 ]

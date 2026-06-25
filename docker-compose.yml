@@ -1,0 +1,59 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pcig-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"          # optional host access; the gateway reaches it over the compose network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    # --- Optional NVIDIA GPU (uncomment; needs NVIDIA Container Toolkit + GPU) ---
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # One-shot: tells the ollama server to pull the model, then exits.
+  model-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      SELF_HOSTED_MODEL: ${SELF_HOSTED_MODEL:-llama3.2:3b}
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$SELF_HOSTED_MODEL\""]
+    restart: "no"
+
+  gateway:
+    build: .
+    container_name: pcig-gateway
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      GATEWAY_OFFLINE: "0"
+      SELF_HOSTED_BASE_URL: http://ollama:11434/v1
+      SELF_HOSTED_MODEL: ${SELF_HOSTED_MODEL:-llama3.2:3b}
+      SELF_HOSTED_MAX_TOKENS: ${SELF_HOSTED_MAX_TOKENS:-512}
+      SELF_HOSTED_TIMEOUT: ${SELF_HOSTED_TIMEOUT:-900}
+      SELF_HOSTED_USD_PER_HOUR: ${SELF_HOSTED_USD_PER_HOUR:-0.80}
+      AUDIT_PATH: /app/state/gateway_audit.jsonl
+      # Optional hosted Claude routes — put the key in a .env file beside this compose file.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - gateway-state:/app/state
+
+volumes:
+  ollama-models:
+  gateway-state:
