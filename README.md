@@ -35,6 +35,37 @@ Prints the whole verifiable set in order: a typed `/infer` response · `route = 
 
 Run the tests with `python -m pytest -q` (20 passing). Watch the gate block a regression directly with `python -m eval.gate --inject-leak` (exits non-zero).
 
+## Run with Docker (containerized)
+
+A self-contained stack — the FastAPI gateway plus a local Ollama backend — runs with one command. Requires Docker; **no cloud credentials**.
+
+```
+docker compose up --build
+```
+
+Three services start in order: `ollama` (model backend) → `model-init` (one-shot `ollama pull`, then exits) → `gateway` (served on `:8000`, wired to the `self_hosted` route at `http://ollama:11434/v1`). The model is configurable via `SELF_HOSTED_MODEL` (default `llama3.2:3b`):
+
+```
+SELF_HOSTED_MODEL=qwen2.5:7b docker compose up --build
+```
+
+> **First run downloads ~5 GB** — the Ollama image (~3 GB, CUDA-bundled) then the model (~2 GB) — before the gateway answers. Give it a few minutes; later runs reuse the cached volumes and start in seconds.
+
+Once healthy, the typed `/infer` boundary is live:
+
+```
+curl localhost:8000/healthz                       # {"status":"ok"}
+
+curl -s -X POST localhost:8000/infer -H 'content-type: application/json' -d '{
+  "request_id": "demo1", "family_id": "fam_riveras", "requesting_member_id": "m_mom",
+  "task": "family_digest", "request_class": "batch",
+  "query": "Summarize what changed today for my family.",
+  "policy_version": "policy-2026-06-18"
+}'
+```
+
+`request_class: "batch"` resolves to the self-hosted backend — the response returns `route: "self_hosted"`, `model_used` set to the pulled model, real latency/cost, and the full included/excluded context audit. Hosted Claude routes are opt-in (add `anthropic` to the image and set `ANTHROPIC_API_KEY`). Tear down with `docker compose down` (add `-v` to drop the cached model volume).
+
 ## Status
 
 🟢 **All three target competencies proven LIVE; spine shipped and tested (25 tests).** The deterministic pipeline — typed boundary, privacy-filtered assembly, model routing + degradation ladder, active/amortized cost split, blocking eval gate, hash-chained audit — is built and reproducible via `python -m evidence`.
